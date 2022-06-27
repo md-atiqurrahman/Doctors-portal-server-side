@@ -5,6 +5,8 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const port = process.env.PORT || 5000;
 const app = express();
+const nodemailer = require('nodemailer');
+const mg = require('nodemailer-mailgun-transport');
 
 //middleware
 app.use(cors());
@@ -28,6 +30,48 @@ function verifyJWT(req, res, next) {
         req.decoded = decoded;
         next();
     })
+};
+
+const auth = {
+    auth: {
+        api_key: process.env.EMAIL_SENDER_KEY,
+        domain: 'sandboxac8531a7788347d5ab6e5bcb47f99250.mailgun.org',
+    }
+};
+
+const nodemailerMailgun = nodemailer.createTransport(mg(auth));
+
+function sendAppointmentEmail(booking) {
+    const { treatment, date, slot, patient, patientName } = booking;
+
+    const email = {
+        from: process.env.EMAIL_SENDER,
+        to: patient,
+        subject: `Your appointment for ${treatment} is on ${date} at ${slot}  is confirmed`,
+        text: `Your appointment for ${treatment} is on ${date} at ${slot}  is confirmed`,
+        html: `
+        <div>
+            <p>Hello ${patientName},</p>
+            <h3>Your appointment for ${treatment} is confirmed </h3>
+            <p>Looking forward to seeing you on ${date} at ${slot}</p>
+
+
+              <h3>Our address</h3>
+              <p>Pirgonj Pourosova,Rangpur</p>
+              <p>Bangladesh</p>
+              <a href='https://www.programming-hero.com/'>unsubscribe</a>
+        </div>
+        `
+    };
+
+    nodemailerMailgun.sendMail(email, (err, info) => {
+        if (err) {
+            console.log(err);
+        }
+        else {
+            console.log(info);
+        }
+    });
 }
 
 async function run() {
@@ -37,10 +81,20 @@ async function run() {
         const serviceCollection = client.db('doctors-portal').collection('service');
         const bookingCollection = client.db('doctors-portal').collection('booking');
         const userCollection = client.db('doctors-portal').collection('users');
+        const doctorCollection = client.db('doctors-portal').collection('doctors');
+
+        const verifyAdmin = async (req, res, next) => {
+            const requester = req.decoded.email;
+            const requesterAccount = await userCollection.findOne({ email: requester })
+            if (requesterAccount.role !== 'admin') {
+                return res.status(403).send({ message: 'Forbidden access' })
+            }
+            next();
+        }
 
         app.get('/service', async (req, res) => {
             const query = {};
-            const cursor = serviceCollection.find(query);
+            const cursor = serviceCollection.find(query).project({ name: 1 });
             const services = await cursor.toArray();
             res.send(services);
         });
@@ -65,29 +119,21 @@ async function run() {
             res.send(services);
         });
 
-        app.get('/admin/:email', async(req, res) =>{
+        app.get('/admin/:email', async (req, res) => {
             const email = req.params.email;
-            const user = await userCollection.findOne({email: email});
+            const user = await userCollection.findOne({ email: email });
             const isAdmin = user.role === 'admin';
-            res.send({admin: isAdmin});
+            res.send({ admin: isAdmin });
         })
 
-        app.put('/users/admin/:email', verifyJWT, async (req, res) => {
+        app.put('/users/admin/:email', verifyJWT, verifyAdmin, async (req, res) => {
             const email = req.params.email;
-            const requester = req.decoded.email;
-            const requesterAccount = await userCollection.findOne({ email: requester })
-            if (requesterAccount.role === 'admin') {
-                const filter = { email: email };
-                const updateDoc = {
-                    $set: { role: 'admin' },
-                }
-                const result = await userCollection.updateOne(filter, updateDoc);
-               return res.send(result);
+            const filter = { email: email };
+            const updateDoc = {
+                $set: { role: 'admin' },
             }
-            else{
-                return res.status(403).send({message: 'forbidden'})
-            }
-
+            const result = await userCollection.updateOne(filter, updateDoc);
+            return res.send(result);
         })
 
         app.get('/users', verifyJWT, async (req, res) => {
@@ -140,7 +186,27 @@ async function run() {
                 return res.send({ success: false, exists });
             }
             const result = await bookingCollection.insertOne(booking);
+            console.log('sending email')
+            sendAppointmentEmail(booking);
             return res.send({ success: true, result });
+        });
+
+        app.get('/doctors', verifyJWT, verifyAdmin, async (req, res) => {
+            const doctors = await doctorCollection.find().toArray();
+            res.send(doctors);
+        })
+
+        app.post('/doctors', verifyJWT, verifyAdmin, async (req, res) => {
+            const doctor = req.body;
+            const result = await doctorCollection.insertOne(doctor);
+            res.send(result);
+        });
+
+        app.delete('/doctors/:email', verifyJWT, verifyAdmin, async (req, res) => {
+            const email = req.params.email;
+            const filter = { email: email }
+            const result = await doctorCollection.deleteOne(filter);
+            res.send(result);
         })
 
     }
@@ -154,7 +220,6 @@ run().catch(console.dir);
 app.get('/', (req, res) => {
     res.send('Doctors server is running');
 });
-
 app.listen(port, () => {
     console.log('Doctors app listening on port', port)
 })
