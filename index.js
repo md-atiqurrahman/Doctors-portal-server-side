@@ -74,6 +74,40 @@ function sendAppointmentEmail(booking) {
         }
     });
 }
+function sendPaymentConfirmEmail(booking) {
+    const { treatment, date, slot, patient, patientName,transactionId } = booking;
+
+    const email = {
+        from: process.env.EMAIL_SENDER,
+        to: patient,
+        subject: `We have received your payment for ${treatment} is on ${date} at ${slot}`,
+        text: `We have received your payment for ${treatment} is on ${date} at ${slot}`,
+        html: `
+        <div>
+            <p>Hello ${patientName},</p>
+            <h3>We have received your payment for ${treatment}</h3>
+            <h3>Thank you for your payment</h3>
+            <p>Your transactionId is : ${transactionId}</p>
+            <p>Looking forward to seeing you on ${date} at ${slot}</p>
+
+
+              <h3>Our address</h3>
+              <p>Pirgonj Pourosova,Rangpur</p>
+              <p>Bangladesh</p>
+              <a href='https://www.programming-hero.com/'>unsubscribe</a>
+        </div>
+        `
+    };
+
+    nodemailerMailgun.sendMail(email, (err, info) => {
+        if (err) {
+            console.log(err);
+        }
+        else {
+            console.log(info);
+        }
+    });
+}
 
 async function run() {
     try {
@@ -218,6 +252,7 @@ async function run() {
         app.patch('/booking/:id', verifyJWT, async (req, res) => {
             const id = req.params.id;
             const payment = req.body;
+            const query = {_id: ObjectId(id)};
             const filter = { _id: ObjectId(id) };
             const updatedDoc = {
                 $set: {
@@ -227,6 +262,8 @@ async function run() {
             }
             const result = await paymentCollection.insertOne(payment);
             const updatedBooking = await bookingCollection.updateOne(filter, updatedDoc);
+            const booking = await bookingCollection.findOne(query);
+            sendPaymentConfirmEmail(booking);
             res.send(updatedBooking);
         })
 
