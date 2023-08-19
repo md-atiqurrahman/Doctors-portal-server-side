@@ -9,7 +9,7 @@ const nodemailer = require('nodemailer');
 const mg = require('nodemailer-mailgun-transport');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
-//middleware
+// Use the cors middleware
 app.use(cors());
 app.use(express.json());
 
