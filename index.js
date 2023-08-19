@@ -111,7 +111,7 @@ function sendPaymentConfirmEmail(booking) {
 
 async function run() {
     try {
-        // await client.connect(); //for vercel development purpose
+        await client.connect();
 
         const serviceCollection = client.db('doctors-portal').collection('service');
         const bookingCollection = client.db('doctors-portal').collection('booking');
